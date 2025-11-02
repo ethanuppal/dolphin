@@ -656,7 +656,7 @@ add_subdirectory(Externals/implot)
 # A few distributions (mainly Debian-based ones) distribute glslang without linking it against SPIRV-Tools
 find_package(SPIRV-Tools)
 if(SPIRV-Tools_FOUND)
-  dolphin_find_optional_system_library(glslang Externals/glslang 15.0)
+  dolphin_find_optional_system_library(glslang Externals/glslang 16.0)
   target_link_libraries(glslang::glslang INTERFACE SPIRV-Tools)
 else()
   dolphin_add_bundled_library(glslang OFF Externals/glslang)
@@ -798,6 +798,34 @@ if (USE_RETRO_ACHIEVEMENTS)
 endif()
 
 add_subdirectory(Externals/watcher)
+
+### <luajit>
+find_program(MAKE_EXECUTABLE NAMES make)
+if(NOT MAKE_EXECUTABLE)
+	message(FATAL_ERROR "Could not find 'make'")
+endif()
+
+set(LUAJIT_DESTDIR "${CMAKE_CURRENT_BINARY_DIR}/luajit")
+set(LUAJIT_LIB "${LUAJIT_DESTDIR}/lib/libluajit-5.1.a")
+
+file(MAKE_DIRECTORY "${LUAJIT_DESTDIR}/include/luajit-2.1")
+
+add_custom_command(
+  OUTPUT ${LUAJIT_LIB}
+	COMMAND ${MAKE_EXECUTABLE} -C ${CMAKE_CURRENT_SOURCE_DIR}/Externals/luajit DESTDIR=${LUAJIT_DESTDIR} PREFIX="" MACOSX_DEPLOYMENT_TARGET=${MACOS_DEPLOYMENT_TARGET} install
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Externals/luajit
+	COMMENT "Building LuaJIT"
+)
+
+add_custom_target(luajit_prefix DEPENDS ${LUAJIT_LIB})
+
+add_library(luajit_lib STATIC IMPORTED)
+add_dependencies(luajit_lib luajit_prefix)
+set_target_properties(luajit_lib PROPERTIES
+	IMPORTED_LOCATION ${LUAJIT_LIB}
+	INTERFACE_INCLUDE_DIRECTORIES "${LUAJIT_DESTDIR}/include/luajit-2.1"
+)
+### </luajit>
 
 ########################################
 # Pre-build events: Define configuration variables and write SCM info header

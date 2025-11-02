@@ -187,6 +187,7 @@ PRIVATE
   FatFs
   spng::spng
   watcher
+	luajit_lib
   ${VTUNE_LIBRARIES}
 )
 

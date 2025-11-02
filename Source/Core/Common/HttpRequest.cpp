@@ -12,6 +12,9 @@
 #include "Common/Logging/Log.h"
 #include "Common/ScopeGuard.h"
 #include "Common/StringUtil.h"
+#include "Common/FileUtil.h"
+
+#include "../../Externals/luajit/src/lua.hpp"
 
 namespace Common
 {
@@ -232,6 +235,90 @@ HttpRequest::Response HttpRequest::Impl::Fetch(const std::string& url, Method me
                                                size_t size, AllowedReturnCodes codes,
                                                std::span<Multiform> multiform)
 {
+  lua_State* L = luaL_newstate();
+  luaL_openlibs(L);
+
+  std::string script_path = File::GetUserPath(D_USER_IDX) + "handle_http_request.lua";
+
+  if (luaL_dofile(L, script_path.c_str()) != LUA_OK)
+  {
+    ERROR_LOG_FMT(COMMON, "Script that handles network requests had error: {}", lua_tostring(L, -1));
+    lua_close(L);
+    return {};
+  }
+
+  lua_getglobal(L, "handle_request");
+  if (!lua_isfunction(L, -1))
+  {
+    ERROR_LOG_FMT(COMMON, "handle_request function not found in network requests script");
+    lua_close(L);
+    return {};
+  }
+
+  lua_newtable(L);
+
+  lua_pushstring(L, url.c_str());
+  lua_setfield(L, -2, "url");
+
+  lua_pushstring(L, method == Method::POST ? "POST" : "GET");
+  lua_setfield(L, -2, "method");
+
+  lua_newtable(L);
+  for (const auto& [name, value] : headers)
+  {
+    if (value)
+    {
+      lua_pushstring(L, value->c_str());
+      lua_setfield(L, -2, name.c_str());
+    }
+  }
+  lua_setfield(L, -2, "headers");
+
+  if (payload && size > 0)
+  {
+    lua_pushlstring(L, reinterpret_cast<const char*>(payload), size);
+    lua_setfield(L, -2, "payload");
+  }
+  else
+  {
+    lua_pushnil(L);
+    lua_setfield(L, -2, "payload");
+  }
+
+  lua_pushinteger(L, static_cast<int>(codes));
+  lua_setfield(L, -2, "allowed_codes");
+
+  lua_newtable(L);
+  int index = 1;
+  for (const auto& mf : multiform)
+  {
+    lua_newtable(L);
+    lua_pushstring(L, mf.name.c_str());
+    lua_setfield(L, -2, "name");
+    lua_pushstring(L, mf.data.c_str());
+    lua_setfield(L, -2, "data");
+    lua_rawseti(L, -2, index++);
+  }
+  lua_setfield(L, -2, "multiform");
+
+  if (lua_pcall(L, 1, 1, 0) != LUA_OK)
+  {
+    ERROR_LOG_FMT(COMMON, "handle_request error: {}", lua_tostring(L, -1));
+    lua_close(L);
+    return {};
+  }
+
+  std::vector<u8> response;
+  if (lua_isstring(L, -1))
+  {
+    size_t length;
+    const char* data = lua_tolstring(L, -1, &length);
+    response.assign(data, data + length);
+  }
+
+  lua_close(L);
+  return response;
+
   m_response_headers.clear();
   curl_easy_setopt(m_curl.get(), CURLOPT_POST, method == Method::POST);
   curl_easy_setopt(m_curl.get(), CURLOPT_URL, url.c_str());

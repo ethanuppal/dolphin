@@ -118,3 +118,6 @@
 	path = Externals/cpp-optparse/cpp-optparse
 	url = https://github.com/weisslj/cpp-optparse.git
 	shallow = true
+[submodule "Externals/luajit"]
+	path = Externals/luajit
+	url = https://luajit.org/git/luajit.git
